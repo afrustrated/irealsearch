@@ -9,6 +9,15 @@
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
         .modal.active { display: flex; }
         .chord-font { font-family: 'Courier New', monospace; font-weight: bold; }
+        .highlight { 
+            background-color: #fbbf24; 
+            color: #000; 
+            padding: 2px 4px; 
+            border-radius: 4px; 
+            box-shadow: 0 0 5px rgba(251, 191, 36, 0.8);
+            font-weight: 900;
+        }
+        .btn-submitting { opacity: 0.5; cursor: not-allowed; pointer-events: none; background-color: #64748b !important; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4">
@@ -52,17 +61,14 @@
         <button onclick="closeModal()" class="absolute top-6 right-6 text-slate-300 hover:text-slate-600 text-2xl">✕</button>
         <h2 id="mTitle" class="text-3xl font-black text-slate-800 leading-tight mb-1"></h2>
         <p id="mInfo" class="text-indigo-500 font-bold mb-6"></p>
-        
         <div class="bg-indigo-50 p-5 rounded-2xl mb-8">
             <h3 class="text-xs font-black text-indigo-300 uppercase mb-2">Original Chords</h3>
-            <div id="mChords" class="chord-font text-lg text-indigo-900 break-all"></div>
+            <div id="mChords" class="chord-font text-lg text-indigo-900 break-all leading-relaxed"></div>
         </div>
-
         <div class="mb-8">
             <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🎥 추천 연주</h3>
             <ul id="linkList" class="space-y-3"></ul>
         </div>
-
         <div class="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-300">
             <h4 class="text-sm font-bold text-slate-600 mb-3">연주 녹음 추천하기</h4>
             <div class="grid grid-cols-2 gap-2 mb-2">
@@ -70,7 +76,7 @@
                 <input id="inYear" type="text" placeholder="녹음연도" class="p-2 rounded-lg border text-sm">
             </div>
             <input id="inUrl" type="text" placeholder="YouTube URL" class="w-full p-2 rounded-lg border text-sm mb-3">
-            <button onclick="addLink()" class="w-full bg-slate-800 text-white py-2 rounded-lg font-bold hover:bg-black transition">링크 등록</button>
+            <button id="submitBtn" onclick="addLink()" class="w-full bg-slate-800 text-white py-2 rounded-lg font-bold hover:bg-black transition">링크 등록</button>
         </div>
     </div>
 </div>
@@ -78,8 +84,9 @@
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbw9C11xnmcGAHViU7MfyWnJ0E--9ulBfdZqq-mFhsVs3ZBLXxa7sLA27kBk9iIf5jSrpQ/exec";
 let songDatabase = [];
+let isSubmitting = false;
 
-// --- 화성학 엔진 (JavaScript 버전) ---
+// --- 화성학 엔진 (JavaScript) ---
 const noteMap = {'C':0,'B#':0,'Db':1,'C#':1,'D':2,'Eb':3,'D#':3,'E':4,'Fb':4,'F':5,'E#':5,'Gb':6,'F#':6,'G':7,'Ab':8,'G#':8,'A':9,'Bb':10,'A#':10,'B':11,'Cb':11};
 
 function simplifyQuality(q) {
@@ -96,23 +103,26 @@ function simplifyQuality(q) {
 }
 
 function parseChord(str) {
-    if (!str || str.startsWith('T') || str.startsWith('*')) return null;
+    if (!str) return null;
     let [main, bass] = str.split('/');
     let match = main.match(/^([A-G][b#]?)(.*)/);
     if (!match) return null;
     return { root: match[1], quality: simplifyQuality(match[2]), bass: bass || match[1] };
 }
 
-function getDistance(n1, n2) { return (noteMap[n2] - noteMap[n1] + 12) % 12; }
+function getDistance(n1, n2) { 
+    const r1 = n1.replace('-', '').trim();
+    const r2 = n2.replace('-', '').trim();
+    return (noteMap[r2] - noteMap[r1] + 12) % 12; 
+}
 
-// --- 데이터 정제 함수 ---
 function cleanChordString(raw) {
     return raw.replace(/(\*[A-Z]|T\d+|[\[\]\{\}\(\)<>xWn|])/g, " ")
               .split(/\s+/)
               .filter(c => c && !/^\d+$/.test(c));
 }
 
-// --- JSON 로드 및 검색 ---
+// --- 데이터 로드 및 검색 ---
 async function loadDatabase() {
     try {
         const response = await fetch('jazz_db.json');
@@ -123,35 +133,57 @@ async function loadDatabase() {
         }));
         displayResults(songDatabase);
     } catch (e) {
-        document.getElementById('status').innerText = "데이터 파일을 불러올 수 없습니다 (jazz_db.json)";
+        document.getElementById('status').innerText = "데이터 로드 실패";
     }
 }
 
+// [복구 완료] 핵심 검색 로직: 화성적 기능 및 인터벌 검색 분기
 function performSearch() {
     const titleTerm = document.getElementById('titleInput').value.toLowerCase();
     const chordStr = document.getElementById('chordInput').value.trim();
     const mode = document.getElementById('searchMode').value;
     const refKey = document.getElementById('keySelect').value;
     
+    // 사용자 입력 코드 파싱
     const userChords = chordStr ? chordStr.split(/\s+/).map(parseChord).filter(c => c) : [];
     
     const filtered = songDatabase.filter(song => {
+        // 1. 제목/작곡가 필터링
         const titleMatch = song.title.toLowerCase().includes(titleTerm) || song.composer.toLowerCase().includes(titleTerm);
         if (!titleMatch) return false;
         if (userChords.length === 0) return true;
 
+        // 2. 곡의 코드 리스트 파싱
         const songChords = song.cleanChords.map(parseChord).filter(c => c);
         if (songChords.length < userChords.length) return false;
 
+        // 3. 슬라이딩 윈도우 방식으로 코드 진행 매칭
         for (let i = 0; i <= songChords.length - userChords.length; i++) {
             let match = true;
             for (let j = 0; j < userChords.length; j++) {
-                let s = songChords[i+j];
-                let u = userChords[j];
+                let s = songChords[i+j]; // 곡의 코드
+                let u = userChords[j];   // 사용자가 검색한 코드
+                
+                // 퀄리티 비교 (Major, Minor, Dominant 등)
                 if (s.quality !== u.quality) { match = false; break; }
-                if (mode === 'absolute' && getDistance(u.root, s.root) !== 0) { match = false; break; }
-                if (mode === 'harmonic' && getDistance(refKey, u.root) !== getDistance(song.key.replace('-', ''), s.root)) { match = false; break; }
-                if (mode === 'relative' && getDistance(userChords[0].root, u.root) !== getDistance(songChords[i].root, s.root)) { match = false; break; }
+
+                // 모드별 근음 비교
+                if (mode === 'absolute') {
+                    // 실음 검색: 근음이 완전히 일치해야 함 (도간 거리 0)
+                    if (getDistance(u.root, s.root) !== 0) { match = false; break; }
+                } 
+                else if (mode === 'harmonic') {
+                    // 화성적 기능 검색: (사용자 키 -> 사용자 코드 근음) 거리 == (곡의 키 -> 곡의 코드 근음) 거리
+                    const userDist = getDistance(refKey, u.root);
+                    const songDist = getDistance(song.key, s.root);
+                    if (userDist !== songDist) { match = false; break; }
+                } 
+                else if (mode === 'relative') {
+                    // 상대적 인터벌 검색: 검색한 코드들 사이의 간격이 곡과 일치해야 함
+                    const userDist = getDistance(userChords[0].root, u.root);
+                    const songDist = getDistance(songChords[i].root, s.root);
+                    if (userDist !== songDist) { match = false; break; }
+                }
             }
             if (match) return true;
         }
@@ -165,7 +197,7 @@ function displayResults(list) {
     const container = document.getElementById('results');
     container.innerHTML = list.map(s => `
         <div class="p-4 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 cursor-pointer transition flex justify-between items-center group" 
-             ondblclick="openModal('${s.title.replace(/'/g, "\\'")}')">
+             onclick="openModal('${s.title.replace(/'/g, "\\'")}')">
             <div>
                 <div class="font-bold text-slate-800 group-hover:text-indigo-700">${s.title}</div>
                 <div class="text-xs text-slate-400 font-medium">${s.composer} • ${s.style}</div>
@@ -173,48 +205,58 @@ function displayResults(list) {
             <div class="text-indigo-300 font-bold">${s.key}</div>
         </div>
     `).join('');
-    document.getElementById('status').innerText = `${list.length}곡 로드됨`;
+    document.getElementById('status').innerText = `${list.length}곡 검색됨`;
 }
 
-// --- 모달 및 추가 기능 ---
+// --- 모달: 하이라이트 포함 ---
 async function openModal(title) {
     const song = songDatabase.find(s => s.title === title);
+    const searchInput = document.getElementById('chordInput').value.trim();
+    
     document.getElementById('mTitle').innerText = song.title;
     document.getElementById('mInfo').innerText = `${song.composer} | ${song.key} | ${song.style}`;
-    document.getElementById('mChords').innerText = song.cleanChords.join(' ');
+    
+    let displayChords = song.cleanChords.join(' ');
+    if (searchInput) {
+        const terms = searchInput.split(/\s+/);
+        terms.forEach(term => {
+            const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+            displayChords = displayChords.replace(regex, `<span class="highlight">${term}</span>`);
+        });
+    }
+    document.getElementById('mChords').innerHTML = displayChords;
     document.getElementById('detailModal').classList.add('active');
     
     document.getElementById('linkList').innerHTML = '로딩 중...';
     const res = await fetch(`${API_URL}?title=${encodeURIComponent(title)}`);
     const links = await res.json();
     document.getElementById('linkList').innerHTML = links.length ? links.map(l => `
-        <li class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-            <a href="${l.url}" target="_blank" class="flex justify-between items-center">
-                <div><div class="font-bold">${l.performer}</div><div class="text-xs text-slate-400">${l.year}년 연주</div></div>
-                <span class="text-indigo-500 font-bold">YouTube ↗</span>
-            </a>
-        </li>`).join('') : '추천 연주가 없습니다.';
+        <li class="bg-white p-4 rounded-xl shadow-sm border border-slate-100"><a href="${l.url}" target="_blank" class="flex justify-between items-center"><div><div class="font-bold">${l.performer}</div><div class="text-xs text-slate-400">${l.year}년 연주</div></div><span class="text-indigo-500 font-bold text-sm">YouTube ↗</span></a></li>`).join('') : '<div class="text-slate-300 text-sm">연주 정보가 없습니다.</div>';
 }
 
+// --- 링크 등록: 중복 방지 ---
 async function addLink() {
-    const payload = {
-        title: document.getElementById('mTitle').innerText,
-        performer: document.getElementById('inPerformer').value,
-        year: document.getElementById('inYear').value,
-        url: document.getElementById('inUrl').value
-    };
-    if (!payload.performer || !payload.url) return alert("정보를 입력하세요.");
-    await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-    alert("등록 완료!");
-    openModal(payload.title);
+    if (isSubmitting) return;
+    const btn = document.getElementById('submitBtn');
+    const performer = document.getElementById('inPerformer').value;
+    const url = document.getElementById('inUrl').value;
+    const title = document.getElementById('mTitle').innerText;
+    if (!performer || !url) return alert("필수 정보를 입력하세요.");
+
+    try {
+        isSubmitting = true;
+        btn.innerText = "등록 중...";
+        btn.classList.add('btn-submitting');
+        await fetch(API_URL, { method: 'POST', body: JSON.stringify({ title, performer, year: document.getElementById('inYear').value, url }) });
+        alert("등록 완료!");
+        openModal(title);
+    } catch (e) { alert("오류 발생"); }
+    finally { isSubmitting = false; btn.innerText = "링크 등록"; btn.classList.remove('btn-submitting'); }
 }
 
 function closeModal() { document.getElementById('detailModal').classList.remove('active'); }
-document.getElementById('searchMode').addEventListener('change', (e) => {
-    document.getElementById('keySelect').classList.toggle('hidden', e.target.value !== 'harmonic');
-});
+document.getElementById('searchMode').addEventListener('change', e => document.getElementById('keySelect').classList.toggle('hidden', e.target.value !== 'harmonic'));
 
-// 시작
 loadDatabase();
 </script>
 </body>
