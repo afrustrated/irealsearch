@@ -6,40 +6,79 @@
     <title>Jazz Standard Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
-        .modal.active { display: flex; }
-        .chord-font { font-family: 'Courier New', monospace; font-weight: bold; }
-        .highlight { 
-            background-color: #fbbf24; color: #000; padding: 2px 4px; 
-            border-radius: 4px; font-weight: 900; box-shadow: 0 0 5px rgba(251, 191, 36, 0.8);
+        /* 악보 스타일 정의 */
+        .sheet-music-container {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #fff;
+            color: #1a1a1a;
+        }
+        .chord-chart {
+            font-family: 'Courier New', monospace;
+            font-size: 1.15rem; 
+            line-height: 2.8; 
+            white-space: pre; 
+            overflow-x: auto;
+            font-weight: bold;
+            color: #1e3a8a;
+        }
+        .section-marker {
+            color: #dc2626; /* 빨간색 섹션 (A, B) */
+            font-weight: 900;
+            font-size: 1.3em;
+            display: block; /* 섹션 나오면 줄바꿈 */
+            margin-top: 24px;
+            margin-bottom: 4px;
+        }
+        .bar-line {
+            color: #94a3b8;
+            font-weight: normal;
+            margin: 0 4px;
+        }
+        .time-sig {
+            font-size: 0.7em;
+            color: #64748b;
+            vertical-align: super;
+            margin-right: 4px;
+            font-style: italic;
+        }
+        .highlight {
+            background-color: #fde047; /* 노란색 하이라이트 */
+            color: #000;
+            padding: 4px 0;
+            border-radius: 2px;
+            box-shadow: 0 0 4px #fde047;
         }
         .btn-submitting { opacity: 0.5; cursor: not-allowed; pointer-events: none; background-color: #64748b !important; }
+        
+        /* 모달 페이드 효과 */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; opacity: 0; transition: opacity 0.3s; }
+        .modal.active { display: flex; opacity: 1; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4">
 
-<div class="max-w-3xl mx-auto bg-white shadow-2xl rounded-3xl p-6 md:p-10">
+<div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-3xl p-6 md:p-10">
     <h1 class="text-3xl font-black text-indigo-700 text-center mb-6">🎷 Jazz Archive Search</h1>
 
-    <div class="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8 space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">제목/작곡가 검색</label>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">제목/작곡가</label>
                 <input type="text" id="titleInput" placeholder="곡 제목..." class="w-full p-3 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">검색 모드</label>
                 <select id="searchMode" class="w-full p-3 rounded-xl border border-slate-300 bg-white">
-                    <option value="absolute">실음 코드 (Real Note)</option>
+                    <option value="relative" selected>상대적 인터벌 (Relative Interval)</option>
                     <option value="harmonic">화성적 기능 (Harmonic Function)</option>
-                    <option value="relative" selected>상대적 인터벌 (Interval)</option>
+                    <option value="absolute">실음 코드 (Real Note)</option>
                 </select>
             </div>
         </div>
         <div>
-            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">코드 진행 입력 (Bass 포함 가능)</label>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">코드 진행 (예: Am7 D7 Gmaj7)</label>
             <div class="flex gap-2">
-                <input type="text" id="chordInput" placeholder="Am7 D7 Gmaj7" class="flex-1 p-3 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="text" id="chordInput" placeholder="코드 입력..." class="flex-1 p-3 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
                 <select id="keySelect" class="p-3 rounded-xl border border-slate-300 bg-white hidden">
                     <option value="C">C</option><option value="Db">Db</option><option value="D">D</option><option value="Eb">Eb</option><option value="E">E</option><option value="F">F</option><option value="Gb">Gb</option><option value="G">G</option><option value="Ab">Ab</option><option value="A">A</option><option value="Bb">Bb</option><option value="B">B</option>
                 </select>
@@ -48,43 +87,64 @@
         </div>
     </div>
 
-    <div id="status" class="text-sm text-center text-slate-400 mb-4 italic">데이터 로드 중...</div>
+    <div id="status" class="text-sm text-center text-slate-400 mb-4 italic">데이터베이스 로드 중...</div>
     <div id="results" class="grid grid-cols-1 gap-2"></div>
 </div>
 
 <div id="detailModal" class="modal items-center justify-center">
-    <div class="bg-white w-full max-w-lg m-4 p-8 rounded-3xl shadow-2xl relative max-h-[90vh] overflow-y-auto">
-        <button onclick="closeModal()" class="absolute top-6 right-6 text-slate-300 hover:text-slate-600 text-2xl">✕</button>
-        <h2 id="mTitle" class="text-3xl font-black text-slate-800 mb-1"></h2>
-        <p id="mInfo" class="text-indigo-500 font-bold mb-6"></p>
-        <div class="bg-indigo-50 p-5 rounded-2xl mb-8">
-            <h3 class="text-xs font-black text-indigo-300 uppercase mb-2">Chords</h3>
-            <div id="mChords" class="chord-font text-lg text-indigo-900 break-all leading-relaxed"></div>
+    <div class="bg-white w-full max-w-2xl m-2 p-8 rounded-sm shadow-2xl relative max-h-[95vh] overflow-y-auto sheet-music-container">
+        <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-black text-3xl transition">✕</button>
+        
+        <div class="border-b-2 border-black pb-4 mb-6 text-center relative mt-4">
+            <div id="mStyle" class="absolute left-0 top-1 text-xs font-bold uppercase text-slate-500 tracking-widest hidden md:block"></div>
+            <h2 id="mTitle" class="text-3xl md:text-4xl font-serif font-bold tracking-tight uppercase"></h2>
+            <div id="mComposer" class="absolute right-0 top-1 text-sm font-medium italic hidden md:block"></div>
         </div>
-        <div class="mb-8">
-            <h3 class="text-lg font-bold text-slate-800 mb-4">🎥 추천 연주</h3>
-            <ul id="linkList" class="space-y-3"></ul>
-        </div>
-        <div class="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-300">
-            <h4 class="text-sm font-bold text-slate-600 mb-3">연주 링크 등록</h4>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-                <input id="inPerformer" type="text" placeholder="연주자" class="p-2 rounded-lg border text-sm">
-                <input id="inYear" type="text" placeholder="연도" class="p-2 rounded-lg border text-sm">
+
+        <div class="flex justify-between items-end mb-4">
+            <div class="text-sm text-slate-500">Original Key: <span id="mOriginalKey" class="font-bold text-black"></span></div>
+            <div class="flex flex-col items-end">
+                <label class="text-[10px] font-bold text-slate-400 uppercase">TRANSPOSE</label>
+                <select id="transposeSelect" onchange="updateModalDisplay()" class="text-lg font-bold border-b-2 border-black bg-transparent outline-none cursor-pointer"></select>
             </div>
-            <input id="inUrl" type="text" placeholder="YouTube URL" class="w-full p-2 rounded-lg border text-sm mb-3">
-            <button id="submitBtn" onclick="addLink()" class="w-full bg-slate-800 text-white py-2 rounded-lg font-bold">등록</button>
+        </div>
+
+        <div class="bg-white p-4 md:p-8 border border-slate-100 shadow-inner rounded-lg mb-8 overflow-hidden">
+            <div id="mChords" class="chord-chart"></div>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-slate-100">
+            <h3 class="text-lg font-black mb-4 flex items-center gap-2 text-slate-800">🎥 Recommended Performances</h3>
+            <ul id="linkList" class="grid grid-cols-1 gap-2 mb-6"></ul>
+            
+            <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Add Performance Link</h4>
+                <div class="grid grid-cols-3 gap-2 mb-2">
+                    <input id="inPerformer" type="text" placeholder="Artist" class="col-span-2 p-2 rounded border text-sm">
+                    <input id="inYear" type="text" placeholder="Year" class="p-2 rounded border text-sm">
+                </div>
+                <input id="inUrl" type="text" placeholder="YouTube URL" class="w-full p-2 rounded border text-sm mb-3">
+                <button id="submitBtn" onclick="addLink()" class="w-full bg-slate-800 text-white py-2 rounded font-bold hover:bg-black transition">Submit Link</button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
+// ==========================================
+// 1. 설정 및 전역 변수
+// ==========================================
 const API_URL = "https://script.google.com/macros/s/AKfycbyKW8Ru9l1wbFqWEI70Nd8ZuBn8QR7YAVKTem1xY_tyIG8JkzifEUn0-4ndFvbxr1FSsg/exec";
 let songDatabase = [];
+let currentOpenedSong = null;
 let isSubmitting = false;
 
-// --- 파이썬 HarmonyEngine 로직 이식 ---
+const allKeys = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const noteMap = {'C':0,'B#':0,'Db':1,'C#':1,'D':2,'Eb':3,'D#':3,'E':4,'Fb':4,'F':5,'E#':5,'Gb':6,'F#':6,'G':7,'Ab':8,'G#':8,'A':9,'Bb':10,'A#':10,'B':11,'Cb':11};
 
+// ==========================================
+// 2. 화성학 엔진 (검색 및 조옮김)
+// ==========================================
 function simplifyQuality(q) {
     q = q.trim().replace(/\^/g, "maj").replace(/min/g, "m").replace(/Min/g, "m");
     if (q.includes("m7b5") || q.includes("h") || q.includes("ø")) return "HALF_DIM";
@@ -101,40 +161,126 @@ function simplifyQuality(q) {
 }
 
 function parseChord(str) {
-    if (!str || str.startsWith('*') || str.startsWith('T')) return null;
+    if (!str) return null;
     let [main, bass] = str.split('/');
-    if (!main || !/^[A-G]/.test(main)) return null;
-    
     let match = main.match(/^([A-G][b#]?)(.*)/);
     if (!match) return null;
-    
-    let root = match[1];
-    let quality = simplifyQuality(match[2]);
-    let finalBass = bass || root;
-    return { root, quality, bass: finalBass };
+    return { root: match[1], quality: simplifyQuality(match[2]), bass: bass || match[1] };
 }
 
-function getSemitoneDistance(n1, n2) {
-    // iReal Key 표기법 정규화 (A- -> A)
+function getDistance(n1, n2) {
     const r1 = n1.replace('-', '').trim();
     const r2 = n2.replace('-', '').trim();
     if (!(r1 in noteMap) || !(r2 in noteMap)) return 0;
     return (noteMap[r2] - noteMap[r1] + 12) % 12;
 }
 
-// --- 데이터 검색 엔진 ---
+function transposeChord(chord, steps) {
+    // 코드 텍스트 내의 모든 근음(Root)과 베이스(Bass)를 찾아 변환
+    return chord.replace(/([A-G][b#]?)/g, (match) => {
+        // 이미 처리된 텍스트가 겹치지 않게 주의해야 하지만, A-G 패턴은 안전함
+        const idx = allKeys.indexOf(match.replace('C#','Db').replace('D#','Eb').replace('F#','Gb').replace('G#','Ab').replace('A#','Bb').replace('B#','C').replace('Cb','B'));
+        if (idx === -1) return match;
+        const newIdx = (idx + steps + 12) % 12;
+        return allKeys[newIdx];
+    });
+}
+
+// ==========================================
+// 3. 4마디 고정 및 악보 렌더링 엔진 (핵심)
+// ==========================================
+function formatTo4BarGrid(rawString, transposeSteps, searchInput) {
+    // [Step 1] 전처리: 파싱하기 쉽게 토큰화
+    let text = rawString
+        .replace(/\*([a-zA-Z])/g, "||SECTION_$1||") // 섹션
+        .replace(/T(\d)(\d)/g, "||TIME_$1/$2||")    // 박자표
+        .replace(/x/g, " % ")                       // 반복기호
+        .replace(/[\[\]\{\}]/g, "|")                // 괄호를 마디선으로
+        .replace(/\|+/g, "|");                      // 중복 마디선 제거
+
+    // [Step 2] 마디 단위 분리
+    let rawBars = text.split('|').map(b => b.trim()).filter(b => b.length > 0);
+
+    let htmlOutput = "";
+    let barCount = 0;
+
+    // [Step 3] 검색어 전처리 (하이라이트용)
+    // 검색어도 현재 키에 맞게 조옮김해야 정확한 하이라이트가 가능하지만,
+    // 복잡성을 줄이기 위해 여기서는 '사용자가 입력한 텍스트'가 '조옮김된 결과'에 있을 때 하이라이트합니다.
+    // 만약 "Dm7 G7"을 검색했고, C키로 조옮김되어 "Am7 D7"이 되었다면, 
+    // 검색어 자체도 내부적으로 조옮김해서 비교하는 것이 가장 정확합니다.
+    // 이번 버전에서는 '조옮김된 검색어'를 생성하여 매칭합니다.
+    
+    let targetSequence = "";
+    if (searchInput) {
+        // 검색어도 똑같이 조옮김
+        targetSequence = transposeChord(searchInput, transposeSteps);
+    }
+
+    // 마디 조립 루프
+    for (let i = 0; i < rawBars.length; i++) {
+        let bar = rawBars[i];
+
+        // 메타 데이터 처리
+        if (bar.startsWith("SECTION_")) {
+            if (barCount > 0) htmlOutput += "\n"; 
+            htmlOutput += `<span class="section-marker">[${bar.split('_')[1]}]</span>`;
+            barCount = 0;
+            continue;
+        }
+        if (bar.startsWith("TIME_")) {
+            htmlOutput += `<span class="time-sig">(${bar.split('_')[1]})</span>`;
+            continue;
+        }
+
+        // 코드 조옮김
+        let transposedBar = transposeChord(bar, transposeSteps);
+        
+        // 마디 디자인 (공백 패딩으로 너비 맞춤 - 탭 문자 대신 스페이스 사용)
+        // 코드가 짧으면 뒤에 공백을 채워 시각적 균형을 맞춤
+        let paddedBar = transposedBar + " ".repeat(Math.max(0, 10 - transposedBar.length));
+
+        // 하이라이트 (조옮김된 검색어와 비교)
+        // 부분 매칭이 아니라 시퀀스 매칭을 위해 마디별로 체크하기보다
+        // 전체 문자열 생성 후 마지막에 replace하는 것이 시퀀스(여러 마디 걸친 코드) 매칭에 유리할 수 있음.
+        // 하지만 4마디 그리드 구조상 태그가 섞이므로, 여기서는 '코드 단위' 매칭을 시도합니다.
+        if (targetSequence) {
+             const tokens = targetSequence.split(/\s+/);
+             tokens.forEach(token => {
+                 // 단어 경계(\b)를 사용하여 정확한 매칭 (예: C가 Cm를 잡지 않게)
+                 const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+                 paddedBar = paddedBar.replace(regex, '<span class="highlight">$&</span>');
+             });
+        }
+
+        // 출력
+        if (barCount === 0) htmlOutput += "<span class='bar-line'>|</span>";
+        htmlOutput += ` ${paddedBar}<span class='bar-line'>|</span>`;
+        barCount++;
+
+        if (barCount === 4) {
+            htmlOutput += "\n";
+            barCount = 0;
+        }
+    }
+    
+    return htmlOutput;
+}
+
+// ==========================================
+// 4. 메인 로직 (검색, 모달 등)
+// ==========================================
 async function loadDatabase() {
     try {
         const response = await fetch('jazz_db.json');
-        const data = await response.json();
-        // JSON 데이터 구조에 따라 search_chords가 없으면 실시간 생성
-        songDatabase = data.map(s => ({
-            ...s,
-            parsedChords: (s.search_chords || s.chord_string.replace(/(\*[A-Z]|T\d+|[\[\]\{\}\(\)<>xWn|])/g, " ").split(/\s+/))
-                           .filter(c => c && !/^\d+$/.test(c))
-        }));
+        songDatabase = await response.json();
+        // display_chords가 없는 구형 데이터 호환성 처리
+        songDatabase.forEach(s => {
+            if(!s.search_chords) s.search_chords = s.chord_string.split(" ");
+            if(!s.display_chords) s.display_chords = s.chord_string;
+        });
         displayResults(songDatabase);
-    } catch (e) { document.getElementById('status').innerText = "JSON 로드 실패"; }
+    } catch (e) { document.getElementById('status').innerText = "데이터 로드 실패"; }
 }
 
 function performSearch() {
@@ -150,7 +296,8 @@ function performSearch() {
         if (!titleMatch) return false;
         if (userChords.length === 0) return true;
 
-        const songChords = song.parsedChords.map(parseChord).filter(c => c);
+        // 검색은 'search_chords' (순수 코드 리스트) 사용
+        const songChords = song.search_chords.map(parseChord).filter(c => c);
         if (songChords.length < userChords.length) return false;
 
         for (let i = 0; i <= songChords.length - userChords.length; i++) {
@@ -159,64 +306,96 @@ function performSearch() {
                 let s = songChords[i+j];
                 let u = userChords[j];
                 
-                if (s.quality !== u.quality) { match = false; break; }
+                // Quality Check (Minor vs Minor7 호환)
+                let qMatch = (s.quality === u.quality) || (s.quality.startsWith("MINOR") && u.quality.startsWith("MINOR"));
+                if (!qMatch) { match = false; break; }
 
                 if (mode === 'absolute') {
-                    if (getSemitoneDistance(u.root, s.root) !== 0) { match = false; break; }
-                    if (getSemitoneDistance(u.bass, s.bass) !== 0) { match = false; break; }
+                    if (getDistance(u.root, s.root) !== 0) { match = false; break; }
                 } else if (mode === 'harmonic') {
-                    if (getSemitoneDistance(refKey, u.root) !== getSemitoneDistance(song.key, s.root)) { match = false; break; }
-                    if (getSemitoneDistance(u.root, u.bass) !== getSemitoneDistance(s.root, s.bass)) { match = false; break; }
+                    if (getDistance(refKey, u.root) !== getDistance(song.key, s.root)) { match = false; break; }
                 } else if (mode === 'relative') {
-                    if (getSemitoneDistance(userChords[0].root, u.root) !== getSemitoneDistance(songChords[i].root, s.root)) { match = false; break; }
-                    if (getSemitoneDistance(u.root, u.bass) !== getSemitoneDistance(s.root, s.bass)) { match = false; break; }
+                    if (getDistance(userChords[0].root, u.root) !== getDistance(songChords[i].root, s.root)) { match = false; break; }
                 }
             }
             if (match) return true;
         }
         return false;
     });
+
     displayResults(filtered);
 }
 
-// --- UI 및 모달 로직 ---
 function displayResults(list) {
     const container = document.getElementById('results');
     container.innerHTML = list.map(s => `
         <div class="p-4 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 cursor-pointer transition flex justify-between items-center" 
              onclick="openModal('${s.title.replace(/'/g, "\\'")}')">
-            <div><div class="font-bold text-slate-800">${s.title}</div><div class="text-xs text-slate-400">${s.composer}</div></div>
+            <div>
+                <div class="font-bold text-slate-800">${s.title}</div>
+                <div class="text-xs text-slate-400">${s.composer}</div>
+            </div>
             <div class="text-indigo-300 font-bold">${s.key}</div>
         </div>
     `).join('');
     document.getElementById('status').innerText = `${list.length}곡 검색됨`;
 }
 
-async function openModal(title) {
-    const song = songDatabase.find(s => s.title === title);
-    const searchInput = document.getElementById('chordInput').value.trim();
-    document.getElementById('mTitle').innerText = song.title;
-    document.getElementById('mInfo').innerText = `${song.composer} | Key: ${song.key}`;
+// 모달 열기
+function openModal(title) {
+    currentOpenedSong = songDatabase.find(s => s.title === title);
+    const originalKey = currentOpenedSong.key.replace('-', '');
     
-    let displayHtml = (song.display_chords || song.parsedChords.join(' '));
-    if (searchInput) {
-        searchInput.split(/\s+/).forEach(t => {
-            const regex = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
-            displayHtml = displayHtml.replace(regex, `<span class="highlight">${t}</span>`);
-        });
-    }
-    document.getElementById('mChords').innerHTML = displayHtml;
+    // 키 선택 박스 초기화
+    const select = document.getElementById('transposeSelect');
+    select.innerHTML = allKeys.map(k => `<option value="${k}" ${k === originalKey ? 'selected' : ''}>${k}</option>`).join('');
+    
+    // 메타 정보 바인딩
+    document.getElementById('mTitle').innerText = currentOpenedSong.title;
+    document.getElementById('mComposer').innerText = currentOpenedSong.composer;
+    document.getElementById('mStyle').innerText = currentOpenedSong.style || "Jazz";
+    document.getElementById('mOriginalKey').innerText = currentOpenedSong.key;
+
+    // 화면 그리기
+    updateModalDisplay();
     document.getElementById('detailModal').classList.add('active');
     
-    // 링크 로드
-    document.getElementById('linkList').innerHTML = 'Loading...';
+    // 유튜브 링크 로드
+    loadLinks(title);
+}
+
+// 화면 업데이트 (조옮김 시 호출)
+function updateModalDisplay() {
+    if (!currentOpenedSong) return;
+    
+    const targetKey = document.getElementById('transposeSelect').value;
+    const originalKey = currentOpenedSong.key.replace('-', '');
+    const steps = (allKeys.indexOf(targetKey) - allKeys.indexOf(originalKey) + 12) % 12;
+    const searchInput = document.getElementById('chordInput').value.trim();
+
+    // 4마디 그리드 포맷팅 실행
+    const finalHtml = formatTo4BarGrid(currentOpenedSong.display_chords, steps, searchInput);
+    document.getElementById('mChords').innerHTML = finalHtml;
+}
+
+// 유튜브 링크 로드
+async function loadLinks(title) {
+    const list = document.getElementById('linkList');
+    list.innerHTML = '<div class="text-slate-400 text-sm">로딩 중...</div>';
     try {
         const res = await fetch(`${API_URL}?title=${encodeURIComponent(title)}`);
         const links = await res.json();
-        document.getElementById('linkList').innerHTML = links.map(l => `<li class="bg-white p-3 rounded-xl border border-slate-100 text-sm"><a href="${l.url}" target="_blank" class="flex justify-between"><span><b>${l.performer}</b> (${l.year})</span><span class="text-indigo-500">YouTube ↗</span></a></li>`).join('') || 'No links yet.';
-    } catch(e) { document.getElementById('linkList').innerHTML = 'Error loading links.'; }
+        list.innerHTML = links.length ? links.map(l => `
+            <li class="bg-white p-3 rounded-xl border border-slate-100 text-sm shadow-sm hover:border-indigo-200 transition">
+                <a href="${l.url}" target="_blank" class="flex justify-between items-center">
+                    <div><span class="font-bold text-slate-700">${l.performer}</span> <span class="text-xs text-slate-400">(${l.year})</span></div>
+                    <span class="text-indigo-500 font-bold text-xs">YouTube ↗</span>
+                </a>
+            </li>`).join('') : '<div class="text-slate-400 text-sm italic">등록된 연주가 없습니다.</div>';
+    } catch(e) { list.innerText = '연주 정보를 가져올 수 없습니다.'; }
 }
 
+// 링크 등록 (중복 방지)
 async function addLink() {
     if (isSubmitting) return;
     const btn = document.getElementById('submitBtn');
@@ -226,7 +405,8 @@ async function addLink() {
         year: document.getElementById('inYear').value.trim(),
         url: document.getElementById('inUrl').value.trim() 
     };
-    if (!payload.performer || !payload.url) return alert("입력란을 채워주세요.");
+    
+    if (!payload.performer || !payload.url) return alert("연주자와 URL을 입력해주세요.");
 
     isSubmitting = true;
     btn.innerText = "등록 중...";
@@ -234,15 +414,23 @@ async function addLink() {
 
     try {
         await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-        alert("등록 성공!");
-        openModal(payload.title);
-    } catch(e) { alert("등록 오류"); }
+        alert("성공적으로 등록되었습니다!");
+        loadLinks(payload.title); // 목록 갱신
+        document.getElementById('inPerformer').value = '';
+        document.getElementById('inYear').value = '';
+        document.getElementById('inUrl').value = '';
+    } catch(e) { alert("등록 중 오류가 발생했습니다."); }
     finally { isSubmitting = false; btn.innerText = "등록"; btn.classList.remove('btn-submitting'); }
 }
 
 function closeModal() { document.getElementById('detailModal').classList.remove('active'); }
-document.getElementById('searchMode').addEventListener('change', e => document.getElementById('keySelect').classList.toggle('hidden', e.target.value !== 'harmonic'));
 
+// 검색 모드 이벤트 리스너
+document.getElementById('searchMode').addEventListener('change', e => {
+    document.getElementById('keySelect').classList.toggle('hidden', e.target.value !== 'harmonic');
+});
+
+// 시작
 loadDatabase();
 </script>
 </body>
