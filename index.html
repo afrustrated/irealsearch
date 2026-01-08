@@ -533,6 +533,374 @@ function performSearch() {
 function displayResults(list) {
     const container = document.getElementById('results');
     container.innerHTML = list.map(s => `
+        <div class="p-4 bg-white border border-slate-200 rounded-2xl hover:<script>
+// ==========================================
+// 1. 설정 및 전역 변수
+// ==========================================
+const API_URL = "https://script.google.com/macros/s/AKfycbyKW8Ru9l1wbFqWEI70Nd8ZuBn8QR7YAVKTem1xY_tyIG8JkzifEUn0-4ndFvbxr1FSsg/exec";
+let songDatabase = [];
+let currentOpenedSong = null;
+let isSubmitting = false;
+
+const allKeys = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const noteMap = {'C':0,'B#':0,'Db':1,'C#':1,'D':2,'Eb':3,'D#':3,'E':4,'Fb':4,'F':5,'E#':5,'Gb':6,'F#':6,'G':7,'Ab':8,'G#':8,'A':9,'Bb':10,'A#':10,'B':11,'Cb':11};
+
+// ==========================================
+// 2. 화성학 엔진
+// ==========================================
+function simplifyQuality(q) {
+    q = q.trim().replace(/\^/g, "maj").replace(/min/g, "m").replace(/Min/g, "m");
+    if (q.includes("m7b5") || q.includes("h") || q.includes("ø")) return "HALF_DIM";
+    if (q.includes("dim") || q.includes("o") || q.includes("°")) return "DIM";
+    if (/[79]|11|13|alt/.test(q)) {
+        let isMinor = q.includes("m") || (q.includes("-") && !q.includes("7-"));
+        let isMajor = q.includes("maj") || q.includes("M");
+        if (!isMinor && !isMajor) return "DOMINANT";
+        if (q.includes("7-")) return "DOMINANT";
+    }
+    if (q.includes("m") || q.includes("-")) return "MINOR";
+    if (q === "" || q === "6" || q.includes("maj") || q.includes("M")) return "MAJOR";
+    return "DOMINANT";
+}
+
+function parseChord(str) {
+    if (!str) return null;
+    let [main, bass] = str.split('/');
+    let match = main.match(/^([A-G][b#]?)(.*)/);
+    if (!match) return null;
+    return { root: match[1], quality: simplifyQuality(match[2]), bass: bass || match[1] };
+}
+
+function getDistance(n1, n2) {
+    const r1 = n1.replace('-', '').trim();
+    const r2 = n2.replace('-', '').trim();
+    if (!(r1 in noteMap) || !(r2 in noteMap)) return 0;
+    return (noteMap[r2] - noteMap[r1] + 12) % 12;
+}
+
+function transposeChord(chord, steps) {
+    return chord.replace(/([A-G][b#]?)/g, (match) => {
+        const idx = allKeys.indexOf(match.replace('C#','Db').replace('D#','Eb').replace('F#','Gb').replace('G#','Ab').replace('A#','Bb').replace('B#','C').replace('Cb','B'));
+        if (idx === -1) return match;
+        const newIdx = (idx + steps + 12) % 12;
+        return allKeys[newIdx];
+    });
+}
+
+// ==========================================
+// 3. 팝업 차트 윈도우 생성 (Fit to Screen & iReal Style)
+// ==========================================
+function openChartWindow() {
+    if (!currentOpenedSong) return;
+    
+    const targetKey = document.getElementById('transposeSelect').value;
+    const originalKey = currentOpenedSong.key.replace('-', '');
+    const steps = (allKeys.indexOf(targetKey) - allKeys.indexOf(originalKey) + 12) % 12;
+    
+    // 차트 HTML 및 총 줄 수 계산
+    const { html: chartHtml, rowCount } = generateChartHtml(currentOpenedSong.display_chords, steps);
+    
+    const w = window.open("", "_blank", "width=1200,height=800");
+    if (!w) return alert("팝업 차단이 설정되어 있습니다.");
+
+    w.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>${currentOpenedSong.title}</title>
+            <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&family=Noto+Sans:wght@700&display=swap" rel="stylesheet">
+            <style>
+                body { 
+                    margin: 0; padding: 2vh 2vw; 
+                    font-family: 'Segoe UI', sans-serif; 
+                    background: #fff; 
+                    height: 100vh; 
+                    box-sizing: border-box;
+                    display: flex; flex-direction: column;
+                    overflow: hidden; /* 스크롤 제거 */
+                }
+                
+                header { 
+                    flex-shrink: 0; 
+                    text-align: center; 
+                    border-bottom: 2px solid #000; 
+                    padding-bottom: 1vh; margin-bottom: 2vh;
+                    position: relative;
+                }
+                h1 { margin: 0; font-family: 'Times New Roman', serif; font-size: 5vh; text-transform: uppercase; line-height: 1; }
+                .meta { 
+                    display: flex; justify-content: space-between; 
+                    font-weight: bold; color: #555; font-size: 1.8vh; 
+                    position: absolute; width: 100%; top: 0;
+                }
+                
+                /* [핵심 레이아웃] 화면 꽉 채우는 그리드 */
+                .chart-container { 
+                    flex: 1; 
+                    display: grid; 
+                    grid-template-columns: repeat(4, 1fr); 
+                    /* 계산된 줄 수만큼 높이를 균등 분할 */
+                    grid-template-rows: repeat(${rowCount}, 1fr);
+                    width: 100%; 
+                    gap: 0; 
+                }
+
+                /* 마디 셀 (가로선 제거, 세로선만 유지) */
+                .bar-cell {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-right: 1.5px solid #000; /* 기본 세로줄 */
+                    height: 100%; 
+                }
+                
+                /* 4번째 마디 우측 선 제거 (줄바꿈 느낌) */
+                .bar-cell:nth-child(4n) { border-right: none; }
+                
+                /* 줄 시작 왼쪽 선 */
+                .row-start { border-left: 1.5px solid #000; }
+                
+                /* [특수 마디선] */
+                .double-bar { border-right: 5px double #000 !important; }
+                .rep-start { border-left: 5px double #000 !important; }
+                .rep-start::before { 
+                    content: ':'; position: absolute; left: 4px; 
+                    font-weight: bold; font-size: 3vh; font-family: serif; 
+                }
+                .rep-end { border-right: 5px double #000 !important; }
+                .rep-end::after { 
+                    content: ':'; position: absolute; right: 4px; 
+                    font-weight: bold; font-size: 3vh; font-family: serif; 
+                }
+
+                /* 텍스트 스타일 (반응형) */
+                .chord-text { 
+                    font-family: 'Verdana', sans-serif; 
+                    color: #1e3a8a; font-weight: 700; 
+                    /* 칸 높이에 비례하여 글자 크기 자동 조절 */
+                    font-size: min(5vw, ${70/rowCount}vh); 
+                    letter-spacing: -0.03em;
+                }
+                .repeat-sign { 
+                    font-family: serif; 
+                    font-size: min(7vw, ${80/rowCount}vh); 
+                    color: #333; font-weight: bold; 
+                }
+                
+                /* 섹션 마커 (A, B) */
+                .section-marker {
+                    position: absolute; top: 0; left: 2px;
+                    background: #dc2626; color: white;
+                    font-size: 2vh; padding: 0.2vh 0.6vh; 
+                    font-weight: 900; border-radius: 2px;
+                    line-height: 1;
+                }
+                
+                /* 악상 기호 (SVG) - 마디 위에 둥둥 뜨게 */
+                .symbol-icon { 
+                    position: absolute; top: -1.5vh; 
+                    height: 3vh; width: 3vh; 
+                }
+                .segno { left: 0; }
+                .coda { right: 0; }
+                
+                /* 지시어 (D.C. al Coda) */
+                .instruction {
+                    position: absolute; bottom: 0.5vh; right: 0.5vh;
+                    font-size: 2vh; font-weight: bold; 
+                    text-align: right; white-space: nowrap;
+                    font-style: italic;
+                }
+
+                /* 빈 공간 채우기 (투명) */
+                .filler { border: none !important; }
+            </style>
+        </head>
+        <body>
+            <header>
+                <div class="meta">
+                    <span>${currentOpenedSong.style || 'Jazz'}</span>
+                    <span>${currentOpenedSong.composer}</span>
+                </div>
+                <h1>${currentOpenedSong.title}</h1>
+                <div style="font-size: 1.8vh; text-align: right; margin-top:0.5vh;">Key: <b>${targetKey}</b></div>
+            </header>
+            <div class="chart-container">
+                ${chartHtml}
+            </div>
+        </body>
+        </html>
+    `);
+    w.document.close();
+}
+
+function generateChartHtml(rawString, transposeSteps) {
+    // 1. 토큰화 전처리 (Python에서 처리한 MARK_ 토큰 활용)
+    let cleanString = rawString.replace(/\|+/g, "|"); // 중복 파이프 제거
+    let tokens = cleanString.split('|').map(t => t.trim());
+    
+    // 앞뒤 빈 요소 제거
+    if(tokens[0] === "") tokens.shift();
+    if(tokens[tokens.length-1] === "") tokens.pop();
+
+    let html = "";
+    let cellIndex = 0;
+    
+    // 상태 변수
+    let currentSection = null;
+    let nextBarIsDouble = false;
+    let nextBarIsRepStart = false;
+
+    // SVG 아이콘
+    const SVG_SEGNO = `<svg viewBox="0 0 50 50" class="symbol-icon segno"><path d="M25 10 Q40 10 40 25 T25 40 Q10 40 10 25 T25 10 M15 35 L35 15 M20 20 L30 30" stroke="black" stroke-width="4" fill="none"/></svg>`;
+    const SVG_CODA = `<svg viewBox="0 0 50 50" class="symbol-icon coda"><circle cx="25" cy="25" r="18" stroke="black" stroke-width="3" fill="none"/><line x1="25" y1="5" x2="25" y2="45" stroke="black" stroke-width="3"/><line x1="5" y1="25" x2="45" y2="25" stroke="black" stroke-width="3"/></svg>`;
+
+    tokens.forEach(token => {
+        if (!token) return;
+
+        // --- 메타 데이터 파싱 (화면에 그리지 않고 상태만 변경) ---
+        
+        // 섹션 처리 (MARK_SEC_A)
+        if (token.startsWith("MARK_SEC_")) {
+            currentSection = token.replace("MARK_SEC_", "");
+            // [중요] 섹션 시작 시 줄바꿈 강제 (남은 칸 투명 처리)
+            while (cellIndex % 4 !== 0) {
+                html += `<div class="bar-cell filler"></div>`;
+                cellIndex++;
+            }
+            return;
+        }
+        
+        // 마디선 처리
+        if (token === "MARK_DBL") { nextBarIsDouble = true; return; }
+        if (token === "MARK_REP_START") { nextBarIsRepStart = true; return; }
+        
+        // --- 마디 렌더링 ---
+        
+        let barText = token;
+        let symbols = "";
+        let instruction = "";
+        let classes = ["bar-cell"];
+
+        // 1. 왼쪽 마디선 스타일
+        if (cellIndex % 4 === 0) classes.push("row-start"); // 줄 시작선
+        if (nextBarIsDouble) { classes.push("double-bar"); nextBarIsDouble = false; }
+        if (nextBarIsRepStart) { classes.push("rep-start"); nextBarIsRepStart = false; }
+
+        // 2. 오른쪽 마디선 및 닫는 태그 처리
+        if (barText.includes("MARK_RDBL")) { 
+            classes.push("double-bar"); 
+            barText = barText.replace("MARK_RDBL", ""); 
+        }
+        if (barText.includes("MARK_REP_END")) {
+            classes.push("rep-end");
+            barText = barText.replace("MARK_REP_END", "");
+        }
+
+        // 3. 악상기호 및 지시어 (D.C. al Coda 등)
+        if (barText.includes("s")) symbols += SVG_SEGNO;
+        if (barText.includes("Q")) symbols += SVG_CODA;
+
+        // D.C. al Coda 전체 문구 추출 (정규식 강화)
+        let instrMatch = barText.match(/(D\.C\.|D\.S\.|Fine).*?(al Coda|al Fine)?/i);
+        if (instrMatch) {
+            instruction = `<div class="instruction">${instrMatch[0]}</div>`;
+            barText = barText.replace(instrMatch[0], "");
+        } else if (barText.includes("al Coda")) {
+            instruction = `<div class="instruction">al Coda</div>`;
+            barText = barText.replace("al Coda", "");
+        }
+
+        // 4. 코드 텍스트 정제 (나머지 기호 제거)
+        let cleanText = barText.replace(/[sSQf]/g, "").trim();
+        let displayContent = "";
+
+        if (cleanText === "%") {
+            displayContent = `<span class="repeat-sign">𝄔</span>`;
+        } else if (cleanText === "") {
+            displayContent = `&nbsp;`;
+        } else {
+            let transposed = transposeChord(cleanText, transposeSteps);
+            displayContent = `<span class="chord-text">${transposed}</span>`;
+        }
+
+        // HTML 조립
+        html += `<div class="${classes.join(' ')}">`;
+        if (currentSection) {
+            html += `<div class="section-marker">${currentSection}</div>`;
+            currentSection = null;
+        }
+        html += symbols;
+        html += displayContent;
+        html += instruction;
+        html += `</div>`;
+
+        cellIndex++;
+    });
+
+    // 마지막 줄 채우기
+    while (cellIndex % 4 !== 0) {
+        html += `<div class="bar-cell filler"></div>`;
+        cellIndex++;
+    }
+
+    // 총 행(Row) 개수 계산
+    const rowCount = Math.ceil(cellIndex / 4);
+    
+    return { html, rowCount };
+}
+
+// ==========================================
+// 4. 메인 로직 (기존 유지)
+// ==========================================
+async function loadDatabase() {
+    try {
+        const response = await fetch('jazz_db.json');
+        songDatabase = await response.json();
+        // 호환성 처리
+        songDatabase.forEach(s => {
+            if(!s.display_chords) s.display_chords = s.chord_string;
+        });
+        displayResults(songDatabase);
+    } catch (e) { document.getElementById('status').innerText = "데이터 로드 실패"; }
+}
+
+function performSearch() {
+    const titleTerm = document.getElementById('titleInput').value.toLowerCase();
+    const chordStr = document.getElementById('chordInput').value.trim();
+    const mode = document.getElementById('searchMode').value;
+    const refKey = document.getElementById('keySelect').value;
+    const userChords = chordStr ? chordStr.split(/\s+/).map(parseChord).filter(c => c) : [];
+    
+    const filtered = songDatabase.filter(song => {
+        const titleMatch = song.title.toLowerCase().includes(titleTerm) || song.composer.toLowerCase().includes(titleTerm);
+        if (!titleMatch) return false;
+        if (userChords.length === 0) return true;
+        const songChords = (song.search_chords || []).map(parseChord).filter(c => c);
+        if (songChords.length < userChords.length) return false;
+
+        for (let i = 0; i <= songChords.length - userChords.length; i++) {
+            let match = true;
+            for (let j = 0; j < userChords.length; j++) {
+                let s = songChords[i+j];
+                let u = userChords[j];
+                let qMatch = (s.quality === u.quality) || (s.quality.startsWith("MINOR") && u.quality.startsWith("MINOR"));
+                if (!qMatch) { match = false; break; }
+                if (mode === 'absolute') { if (getDistance(u.root, s.root) !== 0) { match = false; break; } }
+                else if (mode === 'harmonic') { if (getDistance(refKey, u.root) !== getDistance(song.key, s.root)) { match = false; break; } }
+                else if (mode === 'relative') { if (getDistance(userChords[0].root, u.root) !== getDistance(songChords[i].root, s.root)) { match = false; break; } }
+            }
+            if (match) return true;
+        }
+        return false;
+    });
+    displayResults(filtered);
+}
+
+function displayResults(list) {
+    const container = document.getElementById('results');
+    container.innerHTML = list.map(s => `
         <div class="p-4 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 cursor-pointer transition flex justify-between items-center" 
              onclick="openModal('${s.title.replace(/'/g, "\\'")}')">
             <div><div class="font-bold text-slate-800">${s.title}</div><div class="text-xs text-slate-400">${s.composer}</div></div>
@@ -552,22 +920,22 @@ function openModal(title) {
     document.getElementById('mStyle').innerText = currentOpenedSong.style || "Jazz";
     document.getElementById('mOriginalKey').innerText = currentOpenedSong.key;
 
-    // [중요] 모달에는 차트 대신 버튼만 표시
+    // [중요] 모달에는 차트 보기 버튼만 표시
     const chartContainer = document.getElementById('mChords');
     chartContainer.innerHTML = `
         <div class="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300 cursor-pointer hover:bg-indigo-50 transition group" onclick="openChartWindow()">
             <div class="text-4xl mb-2 group-hover:scale-110 transition-transform">🎼</div>
             <div class="text-lg font-bold text-indigo-600 underline">Click to Open Full Chord Chart</div>
-            <div class="text-xs text-slate-400 mt-1">(Opens in a new window)</div>
+            <div class="text-xs text-slate-400 mt-1">(New Window • Fits Screen)</div>
         </div>
     `;
-    chartContainer.className = ""; // 기존 그리드 클래스 제거
+    // 기존 그리드 클래스 제거 (영향 방지)
+    chartContainer.className = ""; 
 
     document.getElementById('detailModal').classList.add('active');
     loadLinks(title);
 }
 
-// 링크 로드 및 등록 (기존 유지)
 async function loadLinks(title) {
     const list = document.getElementById('linkList');
     list.innerHTML = '<div class="text-slate-400 text-sm">로딩 중...</div>';
