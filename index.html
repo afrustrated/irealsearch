@@ -6,53 +6,77 @@
     <title>Jazz Standard Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 악보 스타일 정의 */
         .sheet-music-container {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #fff;
             color: #1a1a1a;
         }
-        .chord-chart {
+
+        /* [CSS Grid] 4마디 고정 레이아웃의 핵심 */
+        .grid-chart {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr); /* 무조건 4열 */
+            gap: 2px;
+            border: 2px solid #000;
+            background-color: #000; /* 테두리 및 격자 색상 */
+            width: 100%;
+        }
+
+        /* 개별 마디 셀 */
+        .bar-cell {
+            background-color: #fff;
+            position: relative;
+            min-height: 90px; /* 마디 높이 확보 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+            text-align: center;
+        }
+
+        /* 코드 텍스트 */
+        .chord-text {
             font-family: 'Courier New', monospace;
-            font-size: 1.15rem; 
-            line-height: 2.8; 
-            white-space: pre; 
-            overflow-x: auto;
+            font-size: clamp(1rem, 2.5vw, 1.5rem); /* 반응형 폰트 크기 */
             font-weight: bold;
             color: #1e3a8a;
+            line-height: 1.2;
         }
+
+        /* 섹션 마커 (A, B) */
         .section-marker {
-            color: #dc2626; /* 빨간색 섹션 (A, B) */
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            background-color: #dc2626;
+            color: #fff;
+            font-size: 0.8rem;
             font-weight: 900;
-            font-size: 1.3em;
-            display: block; /* 섹션 나오면 줄바꿈 */
-            margin-top: 24px;
-            margin-bottom: 4px;
+            padding: 1px 5px;
+            border-radius: 2px;
         }
-        .bar-line {
-            color: #94a3b8;
-            font-weight: normal;
-            margin: 0 4px;
-        }
+
+        /* 박자표 */
         .time-sig {
-            font-size: 0.7em;
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
             color: #64748b;
-            vertical-align: super;
-            margin-right: 4px;
             font-style: italic;
         }
+
         .highlight {
-            background-color: #fde047; /* 노란색 하이라이트 */
-            color: #000;
-            padding: 4px 0;
-            border-radius: 2px;
-            box-shadow: 0 0 4px #fde047;
+            background-color: #fde047;
+            padding: 2px;
+            border-radius: 4px;
+            box-shadow: 0 0 5px #fde047;
         }
-        .btn-submitting { opacity: 0.5; cursor: not-allowed; pointer-events: none; background-color: #64748b !important; }
-        
-        /* 모달 페이드 효과 */
+
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; opacity: 0; transition: opacity 0.3s; }
         .modal.active { display: flex; opacity: 1; }
+        .btn-submitting { opacity: 0.5; cursor: not-allowed; pointer-events: none; background-color: #64748b !important; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4">
@@ -87,21 +111,21 @@
         </div>
     </div>
 
-    <div id="status" class="text-sm text-center text-slate-400 mb-4 italic">데이터베이스 로드 중...</div>
+    <div id="status" class="text-sm text-center text-slate-400 mb-4 italic">데이터 로드 중...</div>
     <div id="results" class="grid grid-cols-1 gap-2"></div>
 </div>
 
 <div id="detailModal" class="modal items-center justify-center">
-    <div class="bg-white w-full max-w-2xl m-2 p-8 rounded-sm shadow-2xl relative max-h-[95vh] overflow-y-auto sheet-music-container">
+    <div class="bg-white w-full max-w-3xl m-2 p-6 rounded-sm shadow-2xl relative max-h-[95vh] overflow-y-auto sheet-music-container">
         <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-black text-3xl transition">✕</button>
         
-        <div class="border-b-2 border-black pb-4 mb-6 text-center relative mt-4">
+        <div class="border-b-2 border-black pb-4 mb-4 text-center relative mt-4">
             <div id="mStyle" class="absolute left-0 top-1 text-xs font-bold uppercase text-slate-500 tracking-widest hidden md:block"></div>
-            <h2 id="mTitle" class="text-3xl md:text-4xl font-serif font-bold tracking-tight uppercase"></h2>
+            <h2 id="mTitle" class="text-2xl md:text-4xl font-serif font-bold tracking-tight uppercase"></h2>
             <div id="mComposer" class="absolute right-0 top-1 text-sm font-medium italic hidden md:block"></div>
         </div>
 
-        <div class="flex justify-between items-end mb-4">
+        <div class="flex justify-between items-end mb-4 px-1">
             <div class="text-sm text-slate-500">Original Key: <span id="mOriginalKey" class="font-bold text-black"></span></div>
             <div class="flex flex-col items-end">
                 <label class="text-[10px] font-bold text-slate-400 uppercase">TRANSPOSE</label>
@@ -109,13 +133,12 @@
             </div>
         </div>
 
-        <div class="bg-white p-4 md:p-8 border border-slate-100 shadow-inner rounded-lg mb-8 overflow-hidden">
-            <div id="mChords" class="chord-chart"></div>
-        </div>
+        <div id="mChords" class="grid-chart mb-8"></div>
 
         <div class="mt-8 pt-6 border-t border-slate-100">
             <h3 class="text-lg font-black mb-4 flex items-center gap-2 text-slate-800">🎥 Recommended Performances</h3>
             <ul id="linkList" class="grid grid-cols-1 gap-2 mb-6"></ul>
+            
             <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Add Performance Link</h4>
                 
@@ -123,12 +146,11 @@
                     <input id="inPerformer" type="text" placeholder="연주자 (Artist)" class="p-2 rounded border text-sm">
                     <input id="inYear" type="text" placeholder="연도 (Year)" class="p-2 rounded border text-sm">
                 </div>
-                
                 <div class="grid grid-cols-3 gap-2 mb-2">
-                    <input id="inRecommender" type="text" placeholder="추천인 (Your Name)" class="col-span-1 p-2 rounded border text-sm">
-                    <input id="inComment" type="text" placeholder="짧은 감상 (Short Comment)" class="col-span-2 p-2 rounded border text-sm">
+                    <input id="inRecommender" type="text" placeholder="추천인 (Name)" class="col-span-1 p-2 rounded border text-sm">
+                    <input id="inComment" type="text" placeholder="한줄평 (Comment)" class="col-span-2 p-2 rounded border text-sm">
                 </div>
-            
+                
                 <input id="inUrl" type="text" placeholder="YouTube URL" class="w-full p-2 rounded border text-sm mb-3">
                 <button id="submitBtn" onclick="addLink()" class="w-full bg-slate-800 text-white py-2 rounded font-bold hover:bg-black transition">Submit Link</button>
             </div>
@@ -149,7 +171,7 @@ const allKeys = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'
 const noteMap = {'C':0,'B#':0,'Db':1,'C#':1,'D':2,'Eb':3,'D#':3,'E':4,'Fb':4,'F':5,'E#':5,'Gb':6,'F#':6,'G':7,'Ab':8,'G#':8,'A':9,'Bb':10,'A#':10,'B':11,'Cb':11};
 
 // ==========================================
-// 2. 화성학 엔진 (검색 및 조옮김)
+// 2. 화성학 및 파싱 엔진
 // ==========================================
 function simplifyQuality(q) {
     q = q.trim().replace(/\^/g, "maj").replace(/min/g, "m").replace(/Min/g, "m");
@@ -182,9 +204,7 @@ function getDistance(n1, n2) {
 }
 
 function transposeChord(chord, steps) {
-    // 코드 텍스트 내의 모든 근음(Root)과 베이스(Bass)를 찾아 변환
     return chord.replace(/([A-G][b#]?)/g, (match) => {
-        // 이미 처리된 텍스트가 겹치지 않게 주의해야 하지만, A-G 패턴은 안전함
         const idx = allKeys.indexOf(match.replace('C#','Db').replace('D#','Eb').replace('F#','Gb').replace('G#','Ab').replace('A#','Bb').replace('B#','C').replace('Cb','B'));
         if (idx === -1) return match;
         const newIdx = (idx + steps + 12) % 12;
@@ -193,94 +213,84 @@ function transposeChord(chord, steps) {
 }
 
 // ==========================================
-// 3. 4마디 고정 및 악보 렌더링 엔진 (핵심)
+// 3. Grid Chart 렌더링 엔진 (핵심 변경)
 // ==========================================
-function formatTo4BarGrid(rawString, transposeSteps, searchInput) {
-    // [Step 1] 전처리: 파싱하기 쉽게 토큰화
+function renderGridChart(rawString, transposeSteps, searchInput) {
+    // 1. 토큰화 (섹션, 박자표, 반복기호 등 전처리)
     let text = rawString
-        .replace(/\*([a-zA-Z])/g, "||SECTION_$1||") // 섹션
-        .replace(/T(\d)(\d)/g, "||TIME_$1/$2||")    // 박자표
-        .replace(/x/g, " % ")                       // 반복기호
-        .replace(/[\[\]\{\}]/g, "|")                // 괄호를 마디선으로
-        .replace(/\|+/g, "|");                      // 중복 마디선 제거
+        .replace(/\*([a-zA-Z])/g, "||SEC_$1||")
+        .replace(/T(\d)(\d)/g, "||TIME_$1/$2||")
+        .replace(/x/g, " % ")
+        .replace(/[\[\]\{\}]/g, "|")
+        .replace(/\|+/g, "|");
 
-    // [Step 2] 마디 단위 분리
+    // 2. 마디 분리
     let rawBars = text.split('|').map(b => b.trim()).filter(b => b.length > 0);
-
-    let htmlOutput = "";
-    let barCount = 0;
-
-    // [Step 3] 검색어 전처리 (하이라이트용)
-    // 검색어도 현재 키에 맞게 조옮김해야 정확한 하이라이트가 가능하지만,
-    // 복잡성을 줄이기 위해 여기서는 '사용자가 입력한 텍스트'가 '조옮김된 결과'에 있을 때 하이라이트합니다.
-    // 만약 "Dm7 G7"을 검색했고, C키로 조옮김되어 "Am7 D7"이 되었다면, 
-    // 검색어 자체도 내부적으로 조옮김해서 비교하는 것이 가장 정확합니다.
-    // 이번 버전에서는 '조옮김된 검색어'를 생성하여 매칭합니다.
     
-    let targetSequence = "";
+    // 3. 검색어 하이라이트 준비 (검색어도 조옮김해서 매칭)
+    let targetTokens = [];
     if (searchInput) {
-        // 검색어도 똑같이 조옮김
-        targetSequence = transposeChord(searchInput, transposeSteps);
+        let transposedSearch = transposeChord(searchInput, transposeSteps);
+        targetTokens = transposedSearch.split(/\s+/);
     }
 
-    // 마디 조립 루프
-    for (let i = 0; i < rawBars.length; i++) {
-        let bar = rawBars[i];
+    let htmlOutput = "";
+    let currentSection = null;
+    let currentTime = null;
 
-        // 메타 데이터 처리
-        if (bar.startsWith("SECTION_")) {
-            if (barCount > 0) htmlOutput += "\n"; 
-            htmlOutput += `<span class="section-marker">[${bar.split('_')[1]}]</span>`;
-            barCount = 0;
-            continue;
+    // 4. 마디별 HTML 생성
+    rawBars.forEach(bar => {
+        // 메타 데이터 처리 (화면에 바로 그리지 않고 상태 저장)
+        if (bar.startsWith("SEC_")) {
+            currentSection = bar.split('_')[1];
+            return;
         }
         if (bar.startsWith("TIME_")) {
-            htmlOutput += `<span class="time-sig">(${bar.split('_')[1]})</span>`;
-            continue;
+            currentTime = bar.split('_')[1];
+            return;
         }
 
-        // 코드 조옮김
+        // 실제 마디 내용 조옮김
         let transposedBar = transposeChord(bar, transposeSteps);
         
-        // 마디 디자인 (공백 패딩으로 너비 맞춤 - 탭 문자 대신 스페이스 사용)
-        // 코드가 짧으면 뒤에 공백을 채워 시각적 균형을 맞춤
-        let paddedBar = transposedBar + " ".repeat(Math.max(0, 10 - transposedBar.length));
-
-        // 하이라이트 (조옮김된 검색어와 비교)
-        // 부분 매칭이 아니라 시퀀스 매칭을 위해 마디별로 체크하기보다
-        // 전체 문자열 생성 후 마지막에 replace하는 것이 시퀀스(여러 마디 걸친 코드) 매칭에 유리할 수 있음.
-        // 하지만 4마디 그리드 구조상 태그가 섞이므로, 여기서는 '코드 단위' 매칭을 시도합니다.
-        if (targetSequence) {
-             const tokens = targetSequence.split(/\s+/);
-             tokens.forEach(token => {
-                 // 단어 경계(\b)를 사용하여 정확한 매칭 (예: C가 Cm를 잡지 않게)
+        // 하이라이트 적용
+        if (targetTokens.length > 0) {
+             targetTokens.forEach(token => {
                  const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
-                 paddedBar = paddedBar.replace(regex, '<span class="highlight">$&</span>');
+                 transposedBar = transposedBar.replace(regex, '<span class="highlight">$&</span>');
              });
         }
 
-        // 출력
-        if (barCount === 0) htmlOutput += "<span class='bar-line'>|</span>";
-        htmlOutput += ` ${paddedBar}<span class='bar-line'>|</span>`;
-        barCount++;
-
-        if (barCount === 4) {
-            htmlOutput += "\n";
-            barCount = 0;
+        // HTML 조립
+        htmlOutput += `<div class="bar-cell">`;
+        
+        // 섹션 마커 (마디 좌측 상단)
+        if (currentSection) {
+            htmlOutput += `<div class="section-marker">${currentSection}</div>`;
+            currentSection = null;
         }
-    }
-    
+        
+        // 박자표 (마디 우측 상단)
+        if (currentTime) {
+            htmlOutput += `<div class="time-sig">${currentTime}</div>`;
+            currentTime = null;
+        }
+
+        htmlOutput += `<span class="chord-text">${transposedBar || "%"}</span>`;
+        htmlOutput += `</div>`;
+    });
+
     return htmlOutput;
 }
 
 // ==========================================
-// 4. 메인 로직 (검색, 모달 등)
+// 4. 메인 로직
 // ==========================================
 async function loadDatabase() {
     try {
         const response = await fetch('jazz_db.json');
         songDatabase = await response.json();
-        // display_chords가 없는 구형 데이터 호환성 처리
+        // 호환성 처리
         songDatabase.forEach(s => {
             if(!s.search_chords) s.search_chords = s.chord_string.split(" ");
             if(!s.display_chords) s.display_chords = s.chord_string;
@@ -294,15 +304,12 @@ function performSearch() {
     const chordStr = document.getElementById('chordInput').value.trim();
     const mode = document.getElementById('searchMode').value;
     const refKey = document.getElementById('keySelect').value;
-    
     const userChords = chordStr ? chordStr.split(/\s+/).map(parseChord).filter(c => c) : [];
     
     const filtered = songDatabase.filter(song => {
         const titleMatch = song.title.toLowerCase().includes(titleTerm) || song.composer.toLowerCase().includes(titleTerm);
         if (!titleMatch) return false;
         if (userChords.length === 0) return true;
-
-        // 검색은 'search_chords' (순수 코드 리스트) 사용
         const songChords = song.search_chords.map(parseChord).filter(c => c);
         if (songChords.length < userChords.length) return false;
 
@@ -311,24 +318,16 @@ function performSearch() {
             for (let j = 0; j < userChords.length; j++) {
                 let s = songChords[i+j];
                 let u = userChords[j];
-                
-                // Quality Check (Minor vs Minor7 호환)
                 let qMatch = (s.quality === u.quality) || (s.quality.startsWith("MINOR") && u.quality.startsWith("MINOR"));
                 if (!qMatch) { match = false; break; }
-
-                if (mode === 'absolute') {
-                    if (getDistance(u.root, s.root) !== 0) { match = false; break; }
-                } else if (mode === 'harmonic') {
-                    if (getDistance(refKey, u.root) !== getDistance(song.key, s.root)) { match = false; break; }
-                } else if (mode === 'relative') {
-                    if (getDistance(userChords[0].root, u.root) !== getDistance(songChords[i].root, s.root)) { match = false; break; }
-                }
+                if (mode === 'absolute') { if (getDistance(u.root, s.root) !== 0) { match = false; break; } }
+                else if (mode === 'harmonic') { if (getDistance(refKey, u.root) !== getDistance(song.key, s.root)) { match = false; break; } }
+                else if (mode === 'relative') { if (getDistance(userChords[0].root, u.root) !== getDistance(songChords[i].root, s.root)) { match = false; break; } }
             }
             if (match) return true;
         }
         return false;
     });
-
     displayResults(filtered);
 }
 
@@ -337,103 +336,75 @@ function displayResults(list) {
     container.innerHTML = list.map(s => `
         <div class="p-4 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 cursor-pointer transition flex justify-between items-center" 
              onclick="openModal('${s.title.replace(/'/g, "\\'")}')">
-            <div>
-                <div class="font-bold text-slate-800">${s.title}</div>
-                <div class="text-xs text-slate-400">${s.composer}</div>
-            </div>
+            <div><div class="font-bold text-slate-800">${s.title}</div><div class="text-xs text-slate-400">${s.composer}</div></div>
             <div class="text-indigo-300 font-bold">${s.key}</div>
-        </div>
-    `).join('');
+        </div>`).join('');
     document.getElementById('status').innerText = `${list.length}곡 검색됨`;
 }
 
-// 모달 열기
 function openModal(title) {
     currentOpenedSong = songDatabase.find(s => s.title === title);
     const originalKey = currentOpenedSong.key.replace('-', '');
-    
-    // 키 선택 박스 초기화
     const select = document.getElementById('transposeSelect');
     select.innerHTML = allKeys.map(k => `<option value="${k}" ${k === originalKey ? 'selected' : ''}>${k}</option>`).join('');
     
-    // 메타 정보 바인딩
     document.getElementById('mTitle').innerText = currentOpenedSong.title;
     document.getElementById('mComposer').innerText = currentOpenedSong.composer;
     document.getElementById('mStyle').innerText = currentOpenedSong.style || "Jazz";
     document.getElementById('mOriginalKey').innerText = currentOpenedSong.key;
 
-    // 화면 그리기
     updateModalDisplay();
     document.getElementById('detailModal').classList.add('active');
-    
-    // 유튜브 링크 로드
     loadLinks(title);
 }
 
-// 화면 업데이트 (조옮김 시 호출)
 function updateModalDisplay() {
     if (!currentOpenedSong) return;
-    
     const targetKey = document.getElementById('transposeSelect').value;
     const originalKey = currentOpenedSong.key.replace('-', '');
     const steps = (allKeys.indexOf(targetKey) - allKeys.indexOf(originalKey) + 12) % 12;
     const searchInput = document.getElementById('chordInput').value.trim();
 
-    // 4마디 그리드 포맷팅 실행
-    const finalHtml = formatTo4BarGrid(currentOpenedSong.display_chords, steps, searchInput);
+    // 4마디 그리드 렌더링 호출
+    const finalHtml = renderGridChart(currentOpenedSong.display_chords, steps, searchInput);
     document.getElementById('mChords').innerHTML = finalHtml;
 }
 
-// 유튜브 링크 로드
-// 유튜브 링크 로드
+// 유튜브 링크 로드 (추천인, 코멘트 표시 포함)
 async function loadLinks(title) {
     const list = document.getElementById('linkList');
     list.innerHTML = '<div class="text-slate-400 text-sm">로딩 중...</div>';
     try {
         const res = await fetch(`${API_URL}?title=${encodeURIComponent(title)}`);
         const links = await res.json();
-        
-        // [수정] HTML 출력 템플릿 변경
         list.innerHTML = links.length ? links.map(l => `
             <li class="bg-white p-3 rounded-xl border border-slate-100 text-sm shadow-sm hover:border-indigo-200 transition">
                 <a href="${l.url}" target="_blank" class="block">
                     <div class="flex justify-between items-center mb-1">
-                        <div>
-                            <span class="font-bold text-slate-800 text-base">${l.performer}</span> 
-                            <span class="text-xs text-slate-400">(${l.year})</span>
-                        </div>
+                        <div><span class="font-bold text-slate-800 text-base">${l.performer}</span> <span class="text-xs text-slate-400">(${l.year})</span></div>
                         <span class="text-indigo-500 font-bold text-xs">YouTube ↗</span>
                     </div>
-                    
                     <div class="text-xs text-slate-500 border-t border-slate-100 pt-1 mt-1">
-                        <span class="font-bold text-indigo-400">To.</span> ${l.recommender} 
-                        <span class="mx-1 text-slate-300">|</span> 
-                        <span class="italic">"${l.comment}"</span>
+                        <span class="font-bold text-indigo-400">To.</span> ${l.recommender} <span class="mx-1 text-slate-300">|</span> <span class="italic">"${l.comment}"</span>
                     </div>
                 </a>
             </li>`).join('') : '<div class="text-slate-400 text-sm italic">등록된 연주가 없습니다.</div>';
-            
-    } catch(e) { list.innerText = '연주 정보를 가져올 수 없습니다.'; }
+    } catch(e) { list.innerText = '정보를 가져올 수 없습니다.'; }
 }
 
-// 링크 등록 (중복 방지)
-// 링크 등록 (중복 방지)
+// 링크 등록 (추천인, 코멘트 전송 포함)
 async function addLink() {
     if (isSubmitting) return;
     const btn = document.getElementById('submitBtn');
-    
-    // [수정] payload 객체에 추천인(recommender)과 감상(comment) 추가
     const payload = { 
         title: document.getElementById('mTitle').innerText,
         performer: document.getElementById('inPerformer').value.trim(),
         year: document.getElementById('inYear').value.trim(),
-        recommender: document.getElementById('inRecommender').value.trim(), // 추가
-        comment: document.getElementById('inComment').value.trim(),       // 추가
+        recommender: document.getElementById('inRecommender').value.trim(),
+        comment: document.getElementById('inComment').value.trim(),
         url: document.getElementById('inUrl').value.trim() 
     };
-    
-    // 유효성 검사 (추천인은 선택사항으로 둘 경우 이 줄은 그대로 둡니다. 필수로 하려면 조건을 추가하세요)
-    if (!payload.performer || !payload.url) return alert("연주자와 URL을 입력해주세요.");
+    if (!payload.performer || !payload.url) return alert("필수 항목을 입력하세요.");
 
     isSubmitting = true;
     btn.innerText = "등록 중...";
@@ -441,28 +412,23 @@ async function addLink() {
 
     try {
         await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-        alert("성공적으로 등록되었습니다!");
-        loadLinks(payload.title); 
-        
-        // [추가] 입력창 초기화
+        alert("등록되었습니다!");
+        loadLinks(payload.title);
+        // 입력창 초기화
         document.getElementById('inPerformer').value = '';
         document.getElementById('inYear').value = '';
         document.getElementById('inUrl').value = '';
-        document.getElementById('inRecommender').value = ''; // 초기화
-        document.getElementById('inComment').value = '';     // 초기화
-        
-    } catch(e) { alert("등록 중 오류가 발생했습니다."); }
+        document.getElementById('inRecommender').value = '';
+        document.getElementById('inComment').value = '';
+    } catch(e) { alert("오류 발생"); }
     finally { isSubmitting = false; btn.innerText = "등록"; btn.classList.remove('btn-submitting'); }
 }
 
 function closeModal() { document.getElementById('detailModal').classList.remove('active'); }
-
-// 검색 모드 이벤트 리스너
 document.getElementById('searchMode').addEventListener('change', e => {
     document.getElementById('keySelect').classList.toggle('hidden', e.target.value !== 'harmonic');
 });
 
-// 시작
 loadDatabase();
 </script>
 </body>
