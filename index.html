@@ -12,61 +12,84 @@
             color: #1a1a1a;
         }
 
-        /* [CSS Grid] 4마디 고정 레이아웃의 핵심 */
+        /* [수정] 악보형 레이아웃: 테두리 없음, 줄 간격 넓힘 */
         .grid-chart {
             display: grid;
-            grid-template-columns: repeat(4, 1fr); /* 무조건 4열 */
-            gap: 2px;
-            border: 2px solid #000;
-            background-color: #000; /* 테두리 및 격자 색상 */
+            grid-template-columns: repeat(4, 1fr);
+            row-gap: 2.5rem; /* 줄바꿈 사이 간격 (악보 단 간격) */
+            column-gap: 0;   /* 마디 사이는 붙임 */
             width: 100%;
+            margin-top: 1rem;
         }
 
-        /* 개별 마디 셀 */
+        /* [수정] 개별 마디: 가로선 제거, 세로선만 표시 */
         .bar-cell {
             background-color: #fff;
             position: relative;
-            min-height: 90px; /* 마디 높이 확보 */
+            min-height: 100px;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0.5rem;
             text-align: center;
+            border-right: 2px solid #1a1a1a; /* 마디 오른쪽 세로선 */
+        }
+        
+        /* 4번째 마디마다 오른쪽 세로선을 닫는 느낌 (선택사항, 필요 없으면 제거 가능) */
+        .bar-cell:nth-child(4n) {
+            border-right: 2px solid #1a1a1a;
         }
 
-        /* 코드 텍스트 */
+        /* [추가] 악상 기호 (세뇨, 코다) 스타일 */
+        .musical-symbol {
+            position: absolute;
+            top: -20px; /* 마디 위에 둥둥 뜨게 */
+            font-size: 1.5rem;
+            color: #000;
+        }
+        .symbol-coda { right: 5px; }
+        .symbol-segno { left: 5px; }
+
+        /* [수정] 코드 텍스트: 아이리얼 느낌의 폰트 */
         .chord-text {
-            font-family: 'Courier New', monospace;
-            font-size: clamp(1rem, 2.5vw, 1.5rem); /* 반응형 폰트 크기 */
-            font-weight: bold;
-            color: #1e3a8a;
+            font-family: 'Verdana', sans-serif; /* iReal과 비슷한 깔끔한 산세리프 */
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            font-weight: 700;
+            color: #1e3a8a; /* 진한 남색 (아이리얼 스타일) */
             line-height: 1.2;
         }
-
-        /* 섹션 마커 (A, B) */
-        .section-marker {
-            position: absolute;
-            top: 2px;
-            left: 4px;
-            background-color: #dc2626;
-            color: #fff;
-            font-size: 0.8rem;
-            font-weight: 900;
-            padding: 1px 5px;
-            border-radius: 2px;
+        
+        /* % 기호 스타일 */
+        .repeat-sign {
+            font-family: serif;
+            font-size: 2rem;
+            color: #4b5563;
+            font-weight: bold;
         }
 
-        /* 박자표 */
+        /* 섹션 마커: 악보 좌측 상단에 작게 */
+        .section-marker {
+            position: absolute;
+            top: -20px; /* 줄 위로 올림 */
+            left: -2px;
+            background-color: #dc2626;
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 2px;
+            z-index: 10;
+        }
+
         .time-sig {
             position: absolute;
-            top: 2px;
-            right: 4px;
+            top: 4px;
+            left: 4px;
             font-size: 0.75rem;
             font-weight: bold;
             color: #64748b;
-            font-style: italic;
         }
-
+        
         .highlight {
             background-color: #fde047;
             padding: 2px;
@@ -215,19 +238,19 @@ function transposeChord(chord, steps) {
 // ==========================================
 // 3. Grid Chart 렌더링 엔진 (핵심 변경)
 // ==========================================
+// [수정된 핵심 함수] iReal 스타일 악보 렌더링
 function renderGridChart(rawString, transposeSteps, searchInput) {
-    // 1. 토큰화 (섹션, 박자표, 반복기호 등 전처리)
+    // 1. 토큰화 전처리
     let text = rawString
         .replace(/\*([a-zA-Z])/g, "||SEC_$1||")
         .replace(/T(\d)(\d)/g, "||TIME_$1/$2||")
-        .replace(/x/g, " % ")
-        .replace(/[\[\]\{\}]/g, "|")
-        .replace(/\|+/g, "|");
+        .replace(/\|+/g, "|"); // 중복 마디선 제거
 
-    // 2. 마디 분리
+    // 2. 마디 단위 분리
+    // 주의: iReal 데이터에는 |: 같은 기호가 섞여있을 수 있음 (Python에서 처리함)
     let rawBars = text.split('|').map(b => b.trim()).filter(b => b.length > 0);
     
-    // 3. 검색어 하이라이트 준비 (검색어도 조옮김해서 매칭)
+    // 검색어 하이라이트 준비
     let targetTokens = [];
     if (searchInput) {
         let transposedSearch = transposeChord(searchInput, transposeSteps);
@@ -238,9 +261,8 @@ function renderGridChart(rawString, transposeSteps, searchInput) {
     let currentSection = null;
     let currentTime = null;
 
-    // 4. 마디별 HTML 생성
-    rawBars.forEach(bar => {
-        // 메타 데이터 처리 (화면에 바로 그리지 않고 상태 저장)
+    rawBars.forEach((bar, index) => {
+        // 메타 데이터 처리
         if (bar.startsWith("SEC_")) {
             currentSection = bar.split('_')[1];
             return;
@@ -250,33 +272,59 @@ function renderGridChart(rawString, transposeSteps, searchInput) {
             return;
         }
 
-        // 실제 마디 내용 조옮김
-        let transposedBar = transposeChord(bar, transposeSteps);
+        // 악상 기호 추출 및 제거 (화면에 별도 배치하기 위함)
+        let symbols = "";
+        if (bar.includes("s")) symbols += `<div class="musical-symbol symbol-segno">𝄋</div>`; // Segno
+        if (bar.includes("Q")) symbols += `<div class="musical-symbol symbol-coda">𝄌</div>`;  // Coda
+        if (bar.includes("f")) symbols += `<div class="musical-symbol">𝄐</div>`; // Fermata
         
-        // 하이라이트 적용
-        if (targetTokens.length > 0) {
-             targetTokens.forEach(token => {
-                 const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
-                 transposedBar = transposedBar.replace(regex, '<span class="highlight">$&</span>');
-             });
+        // 기호 제거 후 순수 코드만 남김 (단, %는 유지)
+        let cleanBarText = bar.replace(/[sSQf]/g, "").trim();
+
+        // 코드 조옮김 ( % 기호는 조옮김 하지 않음 )
+        let displayContent = "";
+        if (cleanBarText.includes("%")) {
+            displayContent = `<span class="repeat-sign">𝄔</span>`; // 세련된 반복 기호
+        } else {
+            // 도돌이표 기호 처리 (: , || 등)
+            // Python에서 넘겨준 : 가 있다면 마디선 스타일을 바꿔야 하지만,
+            // 간단하게 텍스트 내에서 유지하거나 CSS border로 처리 가능.
+            // 여기서는 텍스트로 표현합니다.
+            let transposedBar = transposeChord(cleanBarText, transposeSteps);
+            
+            // 하이라이트 적용
+            if (targetTokens.length > 0) {
+                 targetTokens.forEach(token => {
+                     const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+                     transposedBar = transposedBar.replace(regex, '<span class="highlight">$&</span>');
+                 });
+            }
+            displayContent = `<span class="chord-text">${transposedBar}</span>`;
         }
 
         // HTML 조립
-        htmlOutput += `<div class="bar-cell">`;
+        // border-left 스타일 결정 (첫 마디이거나 도돌이표 시작일 때)
+        let cellStyle = "";
+        if (index % 4 === 0) cellStyle += "border-left: 2px solid #1a1a1a;"; 
+
+        htmlOutput += `<div class="bar-cell" style="${cellStyle}">`;
         
-        // 섹션 마커 (마디 좌측 상단)
+        // 악상 기호 삽입
+        htmlOutput += symbols;
+
+        // 섹션 마커 (마디 좌측 상단, 줄 바뀔 때 강조)
         if (currentSection) {
             htmlOutput += `<div class="section-marker">${currentSection}</div>`;
             currentSection = null;
         }
         
-        // 박자표 (마디 우측 상단)
+        // 박자표
         if (currentTime) {
             htmlOutput += `<div class="time-sig">${currentTime}</div>`;
             currentTime = null;
         }
 
-        htmlOutput += `<span class="chord-text">${transposedBar || "%"}</span>`;
+        htmlOutput += displayContent;
         htmlOutput += `</div>`;
     });
 
